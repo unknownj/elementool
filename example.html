@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Elementool Example</title>
+        <meta charset="UTF-8" />
+        <script src="index.js"></script>
+        <script>
+            var el = new Elementool();
+        </script>
+    </head>
+    <body>
+        <main>
+
+        </main>
+        <script>
+            var main = document.querySelector("main");
+            el.make("h1", "Hello World!").appendTo(main);
+            el.make(
+                "h2",
+                function(){
+                    return "Dynamic: " + new Date().toISOString().split("T").join(" ").split("Z").join("");
+                },
+                {
+                    color: function(){ return `rgb(${new Date().getSeconds() * 4}, ${new Date().getMinutes() * 4}, ${new Date().getHours() * 4})`; },
+                    fontSize: function(){ return `${20 + (new Date().getSeconds() / 3)}px`; }
+                }).appendTo(main);
+
+            var renderTime = function(){
+                document.querySelector("h2").render()
+                requestAnimationFrame(renderTime);
+            };
+            setTimeout(renderTime, 1000);
+
+        </script>
+    </body>
+</html>

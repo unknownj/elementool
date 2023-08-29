@@ -2,24 +2,91 @@ function Elementool() {
 
   var self = this;
 
-  this.make = function (selector, optionalDescendants, optionalStyleObject) {
-    return this.util.make(selector, optionalDescendants, optionalStyleObject);
+  /**
+   * Creates a new element based on the given selector, content, styles, and event listeners,
+   * and can append it to the specified parent or sibling element.
+   *
+   * @param {string} selector -
+   *   The CSS selector for the element to be created and the parent or sibling element it should be appended to.
+   *   Examples: '#myDiv', '.myClass', 'div', 'input[type="text"]'
+   * @param {string|Element|Element[]|undefined} optionalDescendants -
+   *   The content to be set as the textContent, an Element, or an array of Elements.
+   *   Examples: 'Hello, world!', document.createElement('div'), [element1, element2]
+   * @param {Object} optionalStyleObject -
+   *   An object containing style assignments for the created element.
+   *   Example: { color: 'red', fontSize: '14px' }
+   * @param {Object} optionalEventListeners -
+   *   Optional object with event listeners assigned to the created element.
+   *   Example: { click: handleClick, mouseover: handleMouseOver }
+   * @returns {Element} - The created Element.
+   *
+   * @example
+   *
+   * // Create a new div with text content and append it to the body
+   * Elementool.make('div', 'Hello, world!').appendTo(document.body);
+   *
+   */
+  this.make = function (selector, optionalDescendants, optionalStyleObject, optionalEventListeners) {
+    return this.util.make(selector, optionalDescendants, optionalStyleObject, undefined, optionalEventListeners);
   };
 
-  this.draw = function (selector, optionalText, optionalStyleObject) {
-    return this.util.make(selector, optionalText, optionalStyleObject, "http://www.w3.org/2000/svg");
+  /**
+ * Creates a new SVG element based on the given selector, content, styles, and event listeners,
+ * and appends it to the specified parent or sibling element.
+ *
+ * @param {string} selector -
+ *   The CSS selector for the SVG element to be created and optionally the parent or sibling element it should be appended to.
+ *   Examples: '#mySvg', '.myClass', 'svg'
+ * @param {string|Element|Element[]|undefined} content -
+ *   The content to be set as the textContent, an Element, or an array of Elements.
+ *   Examples: 'Hello, world!', document.createElement('circle'), [element1, element2]
+ * @param {Object} styles -
+ *   An object containing style assignments for the created SVG element.
+ *   Example: { fill: 'red', stroke: 'black' }
+ * @param {Object} optionalEventListeners -
+ *   Optional object with event listeners assigned to the created SVG element.
+ *   Example: { click: handleClick, mouseover: handleMouseOver }
+ * @returns {Element} - The created SVG Element.
+ *
+ * @example
+ *
+ * // Create a new circle with red fill and black stroke and append it to the body
+ * Elementool.draw('circle', undefined, { fill: 'red', stroke: 'black' }).appendTo(document.body);
+ *
+ */
+  this.draw = function (selector, optionalText, optionalStyleObject, optionalEventListeners) {
+    return this.util.make(selector, optionalText, optionalStyleObject, "http://www.w3.org/2000/svg", optionalEventListeners);
   };
 
-  this.math = function (selector, optionalText, optionalStyleObject) {
-    return this.util.make(selector, optionalText, optionalStyleObject, "http://www.w3.org/1998/Math/MathML");
+  this.math = function (selector, optionalText, optionalStyleObject, optionalEventListeners) {
+    return this.util.make(selector, optionalText, optionalStyleObject, "http://www.w3.org/1998/Math/MathML", optionalEventListeners);
   };
 
+  /**
+   * Converts an object into a set of elements based on the object's properties.
+   * 
+   * The object must have one of the following properties:
+   * - make: A string representing a CSS selector for the HTML element to be created.
+   * - draw: A string representing a CSS selector for the SVG element to be created.
+   * - math: A string representing a CSS selector for the MathML element to be created.
+   * 
+   * The object may optionally have the following properties:
+   * - content: A string, Element, or array of Elements to be appended to the created element.
+   * - styles: An object containing style assignments for the created element.
+   * - listeners: An object with event listeners assigned to the created element.
+   * 
+   * 
+   * @param {*} obj - The definition of an element, potentially containing other elements
+   * @returns {Element} - The created Element.
+   */
   this.objectToElement = function (obj) {
     try {
       if (typeof obj.make === "string") {
-        return this.make(obj.make, obj.content, obj.styles);
+        return this.make(obj.make, obj.content, obj.styles, obj.listeners);
       } else if (typeof obj.draw === "string") {
-        return this.draw(obj.draw, obj.content, obj.styles);
+        return this.draw(obj.draw, obj.content, obj.styles, obj.listeners);
+      } else if (typeof obj.math === "string") {
+        return this.math(obj.math, obj.content, obj.styles, obj.listeners);
       }
     } catch (e) {
       // fail silently
@@ -172,6 +239,12 @@ function Elementool() {
         if (styles.hasOwnProperty(property)) {
           var value = styles[property];
 
+          if (typeof value === "function") {
+            element._dynamicStyles = element._dynamicStyles || {};
+            element._dynamicStyles[property] = value;
+            value = value();
+          }
+
           // Check if the property is a CSS custom property (e.g. '--col')
           var customPropertyRegex = /^--/;
           if (customPropertyRegex.test(property)) {
@@ -198,6 +271,28 @@ function Elementool() {
     },
 
     /**
+     * Applies an object of attributes to an element
+     * @param {*} element 
+     * @param {*} attributes 
+     */
+    setAttributesOnElement: function (element, attributes) {
+      for (var attr in attributes) {
+        if (typeof attributes[attr] === "function") {
+          element._dynamicAttributes = element._dynamicAttributes || {};
+          element._dynamicAttributes[attr] = attributes[attr];
+          attributes[attr] = attributes[attr]();
+        }
+        if (element instanceof SVGElement) {
+          element.setAttributeNS(null, attr, attributes[attr]);
+        } else if (element instanceof MathMLElement) {
+          element.setAttributeNS(attr, attributes[attr]);
+        } else {
+          element.setAttribute(attr, attributes[attr]);
+        }
+      }
+    },
+
+    /**
      * Creates an Element based on the given selector, content, and styles, and
      * appends the element to the specified parent or sibling element, if provided.
      *
@@ -210,7 +305,7 @@ function Elementool() {
      * @param {Object} styles - An object containing style assignments for the created element.
      * @returns {Element} - The created Element.
      */
-    make: function (selector, content, styles, optionalNamespace) {
+    make: function (selector, content, styles, optionalNamespace, optionalEventListeners) {
       // Get the element relationship information.
       var elementInfo = this.resolveRelativeElement(selector);
 
@@ -234,20 +329,17 @@ function Elementool() {
       }
 
       // Set the attributes, if provided.
-      for (var attr in components.attributes) {
-        if (optionalNamespace) {
-          newElement.setAttributeNS(null, attr, components.attributes[attr]);
-        } else {
-          newElement.setAttribute(attr, components.attributes[attr]);
-        }
-      }
+      this.setAttributesOnElement(newElement, components.attributes);
 
       // Set the content, if provided.
       if (typeof content === "string") {
         newElement.textContent = content;
+      } else if (typeof content === "function") {
+        newElement._dynamicContent = content;
+        newElement.textContent = content();
       } else if (content instanceof Element) {
         newElement.appendChild(content);
-      } else if (typeof content === "object" && content && (content.draw || content.make)) {
+      } else if (typeof content === "object" && content && (content.draw || content.make || content.math)) {
         var proposedContent = self.objectToElement(content);
         if (proposedContent instanceof Element) {
           newElement.appendChild(proposedContent);
@@ -256,7 +348,7 @@ function Elementool() {
         content.forEach(function (child) {
           if (child instanceof Element) {
             newElement.appendChild(child);
-          } else if (typeof child === "object" && child && (child.draw || child.make)) {
+          } else if (typeof child === "object" && child && (child.draw || child.make || child.math)) {
             var proposedContent = self.objectToElement(child);
             if (proposedContent instanceof Element) {
               newElement.appendChild(proposedContent);
@@ -268,6 +360,17 @@ function Elementool() {
       // Apply the styles, if provided.
       if (styles) {
         this.applyStylesToElement(newElement, styles);
+      }
+
+      // Apply the event listeners, if provided.
+      if (optionalEventListeners) {
+        for (var event in optionalEventListeners) {
+          if (optionalEventListeners.hasOwnProperty(event)) {
+            if (typeof optionalEventListeners[event] === "function") {
+              newElement.addEventListener(event, optionalEventListeners[event]);
+            }
+          }
+        }
       }
 
       // Append the new element to the specified parent or sibling element, if provided.
@@ -291,6 +394,39 @@ function Elementool() {
         return this;
       };
 
+      newElement.setStyles = function (styleObject) {
+        self.util.applyStylesToElement(this, styleObject);
+        return this;
+      };
+
+      newElement.setAttributes = function (attributesObject) {
+        self.util.setAttributesOnElement(this, attributesObject);
+        return this;
+      };
+
+      newElement.setContent = function (content) {
+        if (typeof content === "function") {
+          this._dynamicContent = content;
+          this.textContent = content();
+        } else {
+          this.textContent = content;
+        }
+        return this;
+      };
+
+      newElement.render = function () {
+        if (typeof this._dynamicContent === "function") {
+          this.textContent = this._dynamicContent();
+        }
+        if (this._dynamicStyles) {
+          self.util.applyStylesToElement(this, this._dynamicStyles);
+        }
+        if (this._dynamicAttributes) {
+          self.util.setAttributesOnElement(this, this._dynamicAttributes);
+        }
+        return this;
+      }
+
       // Return the new element.
       return newElement;
     },
@@ -298,6 +434,397 @@ function Elementool() {
 
   }
 
+  this.svgHelpers = {
+
+    circle: function (cx, cy, r, styles) {
+      var attributeString = [
+        ["cx", cx],
+        ["cy", cy],
+        ["r", r]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"]';
+      }).join("");
+
+      return self.draw("circle" + attributeString, undefined, styles);
+    },
+
+    ellipse: function (cx, cy, rx, ry, styles) {
+      var attributeString = [
+        ["cx", cx],
+        ["cy", cy],
+        ["rx", rx],
+        ["ry", ry]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"]';
+      }).join("");
+
+      return self.draw("ellipse" + attributeString, undefined, styles);
+    },
+
+    line: function (x1, y1, x2, y2, styles) {
+      var attributeString = [
+        ["x1", x1],
+        ["y1", y1],
+        ["x2", x2],
+        ["y2", y2]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"]';
+      }).join("");
+
+      return self.draw("line" + attributeString, undefined, styles);
+    },
+
+    _polyAnything: function (type, points, styles) {
+      var attributeString = [
+        ["points", points]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"]';
+      }).join("");
+
+      return self.draw(type + attributeString, undefined, styles);
+    },
+
+    polygon: function (points, styles) {
+      return this._polyAnything("polygon", points, styles);
+    },
+
+    polyline: function (points, styles) {
+      return this._polyAnything("polyline", points, styles);
+    },
+
+    rect: function (x, y, width, height, styles) {
+      var attributeString = [
+        ["x", x],
+        ["y", y],
+        ["width", width],
+        ["height", height]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"]';
+      }).join("");
+
+      return self.draw("rect" + attributeString, undefined, styles);
+    },
+
+    text: function (x, y, text, hAlign, vAlign, styles) {
+
+      var hAlignMapping = {
+        "left": "start",
+        "center": "middle",
+        "right": "end"
+      };
+
+      var vAlignMapping = {
+        "top": "hanging",
+        "center": "central",
+        "bottom": "alphabetic"
+      };
+
+      var attributeString = [
+        ["x", x],
+        ["y", y],
+        ["text-anchor", hAlignMapping[hAlign] || hAlign || "start"],
+        ["dominant-baseline", vAlignMapping[vAlign] || vAlign || "alphabetic"]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"]';
+      }).join("");
+
+      return self.draw("text" + attributeString, text, styles);
+
+    },
+
+    regularNGon: function (cx, cy, r, n, styles) {
+      var points = [];
+      for (var i = 0; i < n; i++) {
+        var angle = 360 / n * i;
+        var point = self.util.polarToCartesian(cx, cy, r, angle);
+        points.push(point.toXY(","));
+      }
+      return this.polygon(points.join(" "), styles);
+    },
+
+    star: function (cx, cy, r, n, styles) {
+      var points = [];
+      for (var i = 0; i < n; i++) {
+        var angle = 360 / n * i;
+        var point = self.util.polarToCartesian(cx, cy, r, angle);
+        points.push(point.toXY(","));
+        angle += 360 / n / 2;
+        point = self.util.polarToCartesian(cx, cy, r / 2, angle);
+        points.push(point.toXY(","));
+      }
+      return this.polygon(points.join(" "), styles);
+    },
+
+    pathInstructions: {
+      moveTo: function (x, y) {
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " M" + x + "," + y);
+        return this;
+      },
+      moveToRelative: function(x,y){
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " m" + x + "," + y);
+        return this;
+      },
+      lineTo: function (x, y) {
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " L" + x + "," + y);
+        return this;
+      },
+      lineToRelative: function(x,y){
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " l" + x + "," + y);
+        return this;
+      },
+      horizontalLineTo: function (x) {
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " H" + x);
+        return this;
+      },
+      horizontalLineToRelative: function(x){
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " h" + x);
+        return this;
+      },
+      verticalLineTo: function (y) {
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " V" + y);
+        return this;
+      },
+      verticalLineToRelative: function(y){
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " v" + y);
+        return this;
+      },
+      arcTo: function (rx, ry, xAxisRotation, largeArcFlag, sweepFlag, x, y) {
+        if(typeof xAxisRotation === "boolean"){
+          sweepFlag = xAxisRotation;
+          xAxisRotation = 0;
+        }
+        if(typeof largeArcFlag === "boolean"){
+          sweepFlag = largeArcFlag;
+          largeArcFlag = 0;
+        }
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " A" + rx + "," + ry + " " + xAxisRotation + " " + largeArcFlag + "," + sweepFlag + " " + x + "," + y);
+        return this;
+      },
+      arcToRelative: function(rx, ry, xAxisRotation, largeArcFlag, sweepFlag, x, y){
+        if(typeof xAxisRotation === "boolean"){
+          sweepFlag = xAxisRotation;
+          xAxisRotation = 0;
+        }
+        if(typeof largeArcFlag === "boolean"){
+          sweepFlag = largeArcFlag;
+          largeArcFlag = 0;
+        }
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " a" + rx + "," + ry + " " + xAxisRotation + " " + largeArcFlag + "," + sweepFlag + " " + x + "," + y);
+        return this;
+      },
+      closePath: function () {
+        var currentValue = this.getAttribute("d") || "";
+        this.setAttribute("d", currentValue + " Z");
+        return this;
+      },
+      quadraticBezierCurveTo: function (x1, y1, x, y) {
+        var smooth = false;
+        if(!x && !y){
+          x = x1;
+          y = y1;
+          smooth = true;
+        }
+        var currentValue = this.getAttribute("d") || "";
+        if(smooth){
+          this.setAttribute("d", currentValue + " T" + x + "," + y);
+        } else {
+          this.setAttribute("d", currentValue + " Q" + x1 + "," + y1 + " " + x + "," + y);
+        }
+        return this;
+      },
+      quadraticBezierCurveToRelative: function(x1, y1, x, y){
+        var smooth = false;
+        if(!x && !y){
+          x = x1;
+          y = y1;
+          smooth = true;
+        }
+        var currentValue = this.getAttribute("d") || "";
+        if(smooth){
+          this.setAttribute("d", currentValue + " t" + x + "," + y);
+        } else {
+          this.setAttribute("d", currentValue + " q" + x1 + "," + y1 + " " + x + "," + y);
+        }
+        return this;
+      },
+      cubicBezierCurveTo: function (x1, y1, x2, y2, x, y) {
+        var smooth = false;
+        if(!x && !y){
+          x = x2;
+          y = y2;
+          smooth = true;
+        }
+        var currentValue = this.getAttribute("d") || "";
+        if(smooth){
+          this.setAttribute("d", currentValue + " S" + x + "," + y);
+        } else {
+          this.setAttribute("d", currentValue + " C" + x1 + "," + y1 + " " + x2 + "," + y2 + " " + x + "," + y);
+        }
+        return this;
+      },
+      cubicBezierCurveToRelative: function(x1, y1, x2, y2, x, y){
+        var smooth = false;
+        if(!x && !y){
+          x = x2;
+          y = y2;
+          smooth = true;
+        }
+        var currentValue = this.getAttribute("d") || "";
+        if(smooth){
+          this.setAttribute("d", currentValue + " s" + x + "," + y);
+        } else {
+          this.setAttribute("d", currentValue + " c" + x1 + "," + y1 + " " + x2 + "," + y2 + " " + x + "," + y);
+        }
+        return this;
+      },
+      
+        
+    },
+
+    path: function (d, styles) {
+      var attributeString = [
+        ["d", d]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"]';
+      }).join("");
+
+      var returnedPath = self.draw("path" + attributeString, undefined, styles);
+      for(var k in this.pathInstructions){
+        returnedPath[k] = this.pathInstructions[k];
+      }
+
+      return returnedPath;
+    },
+
+    animate: function (svgElement, attributeToAnimate, fromValue, toValue, duration, repeatCount, fillMode) {
+
+      // if fromValue is not provided, get the current value of the attribute
+      if (!fromValue) {
+        fromValue = svgElement.getAttribute(attributeToAnimate);
+      }
+
+      // if toValue is not provided, get the current value of the attribute
+      if (!toValue) {
+        toValue = svgElement.getAttribute(attributeToAnimate);
+      }
+
+      // if duration is not provided, default to 1 second
+      if (!duration) {
+        duration = "1s";
+      }
+
+      // if repeatCount is not provided, default to 1
+      if (!repeatCount) {
+        repeatCount = "1";
+      }
+
+      // if fillMode is not provided, default to "freeze"
+      if (!fillMode) {
+        fillMode = "freeze";
+      }
+
+      // Create attribute string for the animate element
+      var animateString = [
+        ["attributeName", attributeToAnimate],
+        ["from", fromValue],
+        ["to", toValue],
+        ["dur", duration],
+        ["repeatCount", repeatCount],
+        ["fill", fillMode]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"' + "]";
+      }).join("");
+
+      var animateElement = self.draw("animate" + animateString);
+      svgElement.appendChild(animateElement);
+    },
+
+    animateTransform: function (svgElement, type, fromValue, toValue, duration, repeatCount, fillMode) {
+
+      // if fromValue is not provided, get the current value of the attribute
+      if (!fromValue) {
+        fromValue = svgElement.getAttribute("transform");
+      }
+
+      // if toValue is not provided, get the current value of the attribute
+      if (!toValue) {
+        toValue = svgElement.getAttribute("transform");
+      }
+
+      // if duration is not provided, default to 1 second
+      if (!duration) {
+        duration = "1s";
+      }
+
+      // if repeatCount is not provided, default to 1
+      if (!repeatCount) {
+        repeatCount = "1";
+      }
+
+      // if fillMode is not provided, default to "freeze"
+      if (!fillMode) {
+        fillMode = "freeze";
+      }
+
+      // Create attribute string for the animate element
+      var animateString = [
+        ["attributeName", "transform"],
+        ["type", type],
+        ["from", fromValue],
+        ["to", toValue],
+        ["dur", duration],
+        ["repeatCount", repeatCount],
+        ["fill", fillMode]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"' + "]";
+      }).join("");
+
+      var animateElement = self.draw("animateTransform" + animateString);
+      svgElement.appendChild(animateElement);
+    },
+
+    animateMotion: function (svgElement, path, duration, repeatCount, fillMode) {
+
+      // if duration is not provided, default to 1 second
+      if (!duration) {
+        duration = "1s";
+      }
+
+      // if repeatCount is not provided, default to 1
+      if (!repeatCount) {
+        repeatCount = "1";
+      }
+
+      // if fillMode is not provided, default to "freeze"
+      if (!fillMode) {
+        fillMode = "freeze";
+      }
+
+      // Create attribute string for the animate element
+      var animateString = [
+        ["dur", duration],
+        ["repeatCount", repeatCount],
+        ["fill", fillMode],
+        ["path", path]
+      ].map(function (pair) {
+        return "[" + pair[0] + '="' + pair[1] + '"' + "]";
+      }).join("");
+
+      var animateElement = self.draw("animateMotion" + animateString);
+      svgElement.appendChild(animateElement);
+    }
+
+  }
 
   /**
    * Applies styles from the given style object to the specified Element.
@@ -306,6 +833,10 @@ function Elementool() {
    */
   this.applyStyle = function (element, styleObject) {
     this.util.applyStylesToElement(element, styleObject);
+  };
+
+  this.setAttributes = function (element, attributesObject) {
+    this.util.setAttributesOnElement(element, attributesObject);
   };
 
   /**
