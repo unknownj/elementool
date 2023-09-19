@@ -54,12 +54,14 @@ function Elementool() {
  * Elementool.draw('circle', undefined, { fill: 'red', stroke: 'black' }).appendTo(document.body);
  *
  */
-  this.draw = function (selector, optionalText, optionalStyleObject, optionalEventListeners) {
-    return this.util.make(selector, optionalText, optionalStyleObject, "http://www.w3.org/2000/svg", optionalEventListeners);
+  this.draw = function (selector, optionalDescendants, optionalStyleObject, optionalEventListeners) {
+    var svgElement = this.util.make(selector, optionalDescendants, optionalStyleObject, "http://www.w3.org/2000/svg", optionalEventListeners);
+    svgElement.moveElementBehind = this.svgHelpers.moveElementBehind;
+    return svgElement;
   };
 
-  this.math = function (selector, optionalText, optionalStyleObject, optionalEventListeners) {
-    return this.util.make(selector, optionalText, optionalStyleObject, "http://www.w3.org/1998/Math/MathML", optionalEventListeners);
+  this.math = function (selector, optionalDescendants, optionalStyleObject, optionalEventListeners) {
+    return this.util.make(selector, optionalDescendants, optionalStyleObject, "http://www.w3.org/1998/Math/MathML", optionalEventListeners);
   };
 
   /**
@@ -284,7 +286,7 @@ function Elementool() {
         }
         if (element instanceof SVGElement) {
           element.setAttributeNS(null, attr, attributes[attr]);
-        } else if (element instanceof MathMLElement) {
+        } else if (window.MathMLElement && element instanceof window.MathMLElement) {
           element.setAttributeNS(attr, attributes[attr]);
         } else {
           element.setAttribute(attr, attributes[attr]);
@@ -325,7 +327,9 @@ function Elementool() {
 
       // Set the class list, if provided.
       if (components.classList) {
-        newElement.className = components.classList.join(" ");
+        components.classList.forEach(function (className) {
+          newElement.classList.add(className);
+        });
       }
 
       // Set the attributes, if provided.
@@ -700,12 +704,126 @@ function Elementool() {
 
       var returnedPath = self.draw("path" + attributeString, undefined, styles);
       for(var k in this.pathInstructions){
-        returnedPath[k] = this.pathInstructions[k];
+        if(this.pathInstructions.hasOwnProperty(k)){
+          returnedPath[k] = this.pathInstructions[k];
+        }
       }
 
       return returnedPath;
     },
 
+    clipPath: function(id, content){
+      var clipPath = self.draw("clipPath", content);
+      clipPath.id = id;
+      return clipPath;
+    },
+
+    mask: function(id, content){
+      var mask = self.draw("mask", content);
+      mask.id = id;
+      return mask;
+    },
+
+    group: function (content, styles) {
+      return self.draw("g", content, styles);
+    },
+
+    pattern: function (id, width, height, content, styles) {
+      var pattern = self.draw("pattern", content, styles);
+      pattern.id = id;
+      pattern.setAttribute("width", width);
+      pattern.setAttribute("height", height);
+      pattern.setAttribute("patternUnits", "userSpaceOnUse");
+      return pattern;
+    },
+
+    linearGradient: function (id, stops, x1OrDirection, y1, x2, y2) {
+      var gradient = self.draw("linearGradient", stops);
+      gradient.id = id;
+      var x1;
+      if(typeof x1OrDirection === "string"){
+        if(x1OrDirection === "LR"){
+          x1 = 0;
+          y1 = 0;
+          x2 = 1;
+          y2 = 0;
+        } else if(x1OrDirection === "RL"){
+          x1 = 1;
+          y1 = 0;
+          x2 = 0;
+          y2 = 0;
+        } else if(x1OrDirection === "TB"){
+          x1 = 0;
+          y1 = 0;
+          x2 = 0;
+          y2 = 1;
+        } else if(x1OrDirection === "BT"){
+          x1 = 0;
+          y1 = 1;
+          x2 = 0;
+          y2 = 0;
+        } else if(x1OrDirection === "TLBR"){
+          x1 = 0;
+          y1 = 0;
+          x2 = 1;
+          y2 = 1;
+        } else if(x1OrDirection === "BLTR"){
+          x1 = 0;
+          y1 = 1;
+          x2 = 1;
+          y2 = 0;
+        } else if(x1OrDirection === "TRBL"){
+          x1 = 1;
+          y1 = 0;
+          x2 = 0;
+          y2 = 1;
+        } else if(x1OrDirection === "BRTL"){
+          x1 = 1;
+          y1 = 1;
+          x2 = 0;
+          y2 = 0;
+        } else {
+          x1 = 0;
+          y1 = 0;
+          x2 = 1;
+          y2 = 0;
+        }
+      } else {
+        x1 = x1OrDirection;
+      }
+      gradient.setAttribute("x1", x1);
+      gradient.setAttribute("y1", y1);
+      gradient.setAttribute("x2", x2);
+      gradient.setAttribute("y2", y2);
+      return gradient;
+    },
+
+    stop: function (offset, color, opacity) {
+      var stop = self.draw("stop");
+      stop.setAttribute("offset", offset);
+      stop.setAttribute("stop-color", color);
+      if (opacity) {
+        stop.setAttribute("stop-opacity", opacity);
+      }
+      return stop;
+    },
+
+    radialGradient: function (id, stops, cx, cy, r, fx, fy) {
+      var gradient = self.draw("radialGradient", stops);
+      gradient.id = id;
+      gradient.setAttribute("cx", cx);
+      gradient.setAttribute("cy", cy);
+      gradient.setAttribute("r", r);
+      if (fx) {
+        gradient.setAttribute("fx", fx);
+      }
+      if (fy) {
+        gradient.setAttribute("fy", fy);
+      }
+      return gradient;
+    },
+
+    
     animate: function (svgElement, attributeToAnimate, fromValue, toValue, duration, repeatCount, fillMode) {
 
       // if fromValue is not provided, get the current value of the attribute
@@ -822,6 +940,61 @@ function Elementool() {
 
       var animateElement = self.draw("animateMotion" + animateString);
       svgElement.appendChild(animateElement);
+    },
+
+    moveElementBehind: function (elementToMove, elementToMoveBehind) {
+      if(!elementToMoveBehind && typeof this === "object" && this instanceof SVGElement){
+        elementToMoveBehind = elementToMove;
+        elementToMove = this;
+      }
+      if (elementToMoveBehind.parentNode) {
+        elementToMoveBehind.parentNode.insertBefore(elementToMove, elementToMoveBehind);
+      }
+    },
+
+    addMaskToElement: function (element, maskElement) {
+      if (maskElement instanceof Element){
+        if(maskElement.id) {
+          element.setAttribute("mask", "url(#" + maskElement.id + ")");
+        } else {
+          var maskId = "mask" + Math.random().toString().slice(2);
+          maskElement.id = maskId;
+          element.setAttribute("mask", "url(#" + maskId + ")");
+        }
+        // if the mask element isn't in the DOM we'll need to add it
+        if(!maskElement.parentNode){
+          element.parentNode.insertBefore(maskElement, element);
+        }
+      }
+    },
+
+
+    addClipPathToElement: function (element, clipPathElement) {
+      if (clipPathElement instanceof Element){
+        if(clipPathElement.id) {
+          element.setAttribute("clip-path", "url(#" + clipPathElement.id + ")");
+        } else {
+          var clipPathId = "clipPath" + Math.random().toString().slice(2);
+          clipPathElement.id = clipPathId;
+          element.setAttribute("clip-path", "url(#" + clipPathId + ")");
+        }
+        // if the clip path element isn't in the DOM we'll need to add it
+        if(!clipPathElement.parentNode){
+          element.parentNode.insertBefore(clipPathElement, element);
+        }
+      }
+    },
+
+    groupElements: function (elements) {
+      var group = self.draw("g");
+      // if the first element of the array has a parent, append the group to the parent
+      if (elements[0].parentNode) {
+        elements[0].parentNode.appendChild(group);
+      }
+      elements.forEach(function (element) {
+        group.appendChild(element);
+      });
+      return group;
     }
 
   }
