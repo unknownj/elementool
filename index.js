@@ -997,6 +997,24 @@ function Elementool() {
       return group;
     }
 
+  };
+
+  this.accessibilityHelpers = {
+    description: function(element, description){
+      element.setAttribute("aria-label", description);
+      element.setAttribute("title", description);
+      return element;
+    },
+    button: function(element, customDescription){
+      element.setAttribute("role", "button");
+      if(customDescription) this.description(element, customDescription);
+      return element;
+    },
+    link: function(element, customDescription){
+      element.setAttribute("role", "link");
+      if(customDescription) this.description(element, customDescription);
+      return element;
+    }
   }
 
   /**
