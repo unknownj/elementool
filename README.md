@@ -73,10 +73,6 @@ Refer to the detailed documentation for a complete list of functions, parameters
   - `make(selector, content, styles, eventListeners)`
   - `draw(selector, content, styles, eventListeners)`
   - `math(selector, content, styles, eventListeners)`
-- **Utility Functions**
-  - `util.polarToCartesian(centerX, centerY, radius, angleInDegrees)`
-  - `util.selectorToComponents(selector)`
-  - `util.resolveRelativeElement(input)`
 - **SVG Helpers**
   - `svgHelpers.circle(cx, cy, r, styles)`
   - `svgHelpers.ellipse(cx, cy, rx, ry, styles)`
@@ -88,7 +84,7 @@ Refer to the detailed documentation for a complete list of functions, parameters
 
 ## Contributing
 
-Contributions to Elementool are welcome! Please read our contributing guidelines for more information on how to submit pull requests, report issues, and suggest enhancements.
+Contributions to Elementool are welcome!
 
 ## License
 
