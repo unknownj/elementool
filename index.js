@@ -6,7 +6,7 @@ function Elementool() {
    * Creates a new element based on the given selector, content, styles, and event listeners,
    * and can append it to the specified parent or sibling element.
    *
-   * @param {string} selector -
+   * @param {string} selector - 
    *   The CSS selector for the element to be created and the parent or sibling element it should be appended to.
    *   Examples: '#myDiv', '.myClass', 'div', 'input[type="text"]'
    * @param {string|Element|Element[]|undefined} optionalDescendants -
@@ -57,6 +57,11 @@ function Elementool() {
   this.draw = function (selector, optionalDescendants, optionalStyleObject, optionalEventListeners) {
     var svgElement = this.util.make(selector, optionalDescendants, optionalStyleObject, "http://www.w3.org/2000/svg", optionalEventListeners);
     svgElement.moveElementBehind = this.svgHelpers.moveElementBehind;
+    svgElement.animate = function (attributeToAnimate, fromValue, toValue, duration, repeatCount, fillMode){
+      self.svgHelpers.animate(this, attributeToAnimate, fromValue, toValue, duration, repeatCount, fillMode);
+      return svgElement;
+    }
+    svgElement.isSvg = true;
     return svgElement;
   };
 
@@ -84,15 +89,35 @@ function Elementool() {
   this.objectToElement = function (obj) {
     try {
       if (typeof obj.make === "string") {
-        return this.make(obj.make, obj.content, obj.styles, obj.listeners);
+        var newElement = this.make(obj.make, obj.content, obj.styles, obj.listeners);
+        if(obj.attributes) newElement.setAttributes(obj.attributes);
+        return newElement;
       } else if (typeof obj.draw === "string") {
-        return this.draw(obj.draw, obj.content, obj.styles, obj.listeners);
+        var newElement = this.draw(obj.draw, obj.content, obj.styles, obj.listeners);
+        if(obj.attributes) newElement.setAttributes(obj.attributes);
+        return newElement;
       } else if (typeof obj.math === "string") {
-        return this.math(obj.math, obj.content, obj.styles, obj.listeners);
+        var newElement = this.math(obj.math, obj.content, obj.styles, obj.listeners);
+        if(obj.attributes) newElement.setAttributes(obj.attributes);
+        return newElement;
       }
     } catch (e) {
       // fail silently
     }
+  };
+
+  self.templates = {
+    add: function(templateName, templateFunction){
+      var canonicalName = templateName.toLowerCase();
+      if(!this[canonicalName]){
+        this[canonicalName] = templateFunction;
+      }
+    }
+  };
+
+  self.elementsWithDynamicValues = [];
+  self.render = function(){
+    self.elementsWithDynamicValues.forEach(function(e){ e.render(); });
   };
 
   this.util = {
@@ -238,10 +263,11 @@ function Elementool() {
     applyStylesToElement: function (element, styles) {
       // Iterate through each style property in the styles object
       for (var property in styles) {
-        if (styles.hasOwnProperty(property)) {
+        if (styles.hasOwnProperty ? styles.hasOwnProperty(property) : styles[property]) {
           var value = styles[property];
 
           if (typeof value === "function") {
+            if(self.elementsWithDynamicValues.indexOf(element) < 0) self.elementsWithDynamicValues.push(element);
             element._dynamicStyles = element._dynamicStyles || {};
             element._dynamicStyles[property] = value;
             value = value();
@@ -277,14 +303,21 @@ function Elementool() {
      * @param {*} element 
      * @param {*} attributes 
      */
-    setAttributesOnElement: function (element, attributes) {
+    setAttributesOnElement: function (element, attributesObject) {
+      var attributes = {};
+      for(var k in attributesObject){
+        attributes[k] = attributesObject[k];
+      }
       for (var attr in attributes) {
         if (typeof attributes[attr] === "function") {
+          if(self.elementsWithDynamicValues.indexOf(element) < 0) self.elementsWithDynamicValues.push(element);
           element._dynamicAttributes = element._dynamicAttributes || {};
           element._dynamicAttributes[attr] = attributes[attr];
           attributes[attr] = attributes[attr]();
         }
-        if (element instanceof SVGElement) {
+        if (window.SVGElement && element instanceof SVGElement) {
+          element.setAttributeNS(null, attr, attributes[attr]);
+        } else if (!window.SVGElement && element.isSvg) {
           element.setAttributeNS(null, attr, attributes[attr]);
         } else if (window.MathMLElement && element instanceof window.MathMLElement) {
           element.setAttributeNS(attr, attributes[attr]);
@@ -314,6 +347,15 @@ function Elementool() {
       // Get the component information for the element to be created.
       var components = this.selectorToComponents(elementInfo.elementDefinition);
 
+      if(typeof components.tagName === "string" && typeof self.templates[components.tagName.toLowerCase()] === "function"){
+        return self.templates[components.tagName.toLowerCase()](
+          typeof selector.substring === "function" ? selector.substring(components.tagName.length) : selector.substr(components.tagName.length),
+          content,
+          styles,
+          optionalEventListeners
+        );
+      }
+
       // Create the new element.
       var newElement = optionalNamespace ?
         document.createElementNS(optionalNamespace, components.tagName)
@@ -328,7 +370,11 @@ function Elementool() {
       // Set the class list, if provided.
       if (components.classList) {
         components.classList.forEach(function (className) {
-          newElement.classList.add(className);
+          if (newElement.classList) {
+            newElement.classList.add(className);
+          } else {
+            newElement.className = (newElement.getAttribute("class") || "").split(" ").filter(function (a) { return !!a; }).concat(className.trim()).join(" ");
+          }
         });
       }
 
@@ -337,28 +383,38 @@ function Elementool() {
 
       // Set the content, if provided.
       if (typeof content === "string") {
-        newElement.textContent = content;
+        if (newElement.hasOwnProperty && newElement.hasOwnProperty("textContent")) {
+          newElement.textContent = content;
+        } else {
+          newElement.innerText = content;
+        }
       } else if (typeof content === "function") {
+        if(self.elementsWithDynamicValues.indexOf(newElement) < 0) self.elementsWithDynamicValues.push(newElement);
         newElement._dynamicContent = content;
-        newElement.textContent = content();
-      } else if (content instanceof Element) {
+        if (newElement.hasOwnProperty && newElement.hasOwnProperty("textContent")) {
+          newElement.textContent = content();
+        } else {
+          newElement.innerText = content();
+        }
+      } else if (typeof content === "object" && typeof content.tagName === "string") {
         newElement.appendChild(content);
       } else if (typeof content === "object" && content && (content.draw || content.make || content.math)) {
         var proposedContent = self.objectToElement(content);
         if (proposedContent instanceof Element) {
           newElement.appendChild(proposedContent);
         }
-      } else if (Array.isArray(content)) {
-        content.forEach(function (child) {
-          if (child instanceof Element) {
-            newElement.appendChild(child);
-          } else if (typeof child === "object" && child && (child.draw || child.make || child.math)) {
-            var proposedContent = self.objectToElement(child);
-            if (proposedContent instanceof Element) {
+      } else if (typeof content === "object" && typeof content.push === "function") {
+        for (var contentIndex = 0; contentIndex < content.length; contentIndex++) {
+          var thisContent = content[contentIndex];
+          if (typeof thisContent === "object" && typeof thisContent.tagName === "string") {
+            newElement.appendChild(thisContent);
+          } else if (typeof thisContent === "object" && thisContent && (thisContent.draw || thisContent.make || thisContent.math)) {
+            var proposedContent = self.objectToElement(thisContent);
+            if (typeof proposedContent === "object" && typeof proposedContent.tagName === "string") {
               newElement.appendChild(proposedContent);
             }
           }
-        });
+        };
       }
 
       // Apply the styles, if provided.
@@ -369,9 +425,11 @@ function Elementool() {
       // Apply the event listeners, if provided.
       if (optionalEventListeners) {
         for (var event in optionalEventListeners) {
-          if (optionalEventListeners.hasOwnProperty(event)) {
+          if (optionalEventListeners.hasOwnProperty ? optionalEventListeners.hasOwnProperty(event) : optionalEventListeners[event]) {
             if (typeof optionalEventListeners[event] === "function") {
               newElement.addEventListener(event, optionalEventListeners[event]);
+            } else if(typeof optionalEventListeners[event] === "string" && typeof window[optionalEventListeners[event]] === "function"){
+              newElement.addEventListener(event, window[optionalEventListeners[event]]);
             }
           }
         }
@@ -392,7 +450,7 @@ function Elementool() {
 
       // Add the appendTo method to the new element.
       newElement.appendTo = function (intendedParentElement) {
-        if (intendedParentElement instanceof Element) {
+        if (typeof intendedParentElement === "object" && typeof intendedParentElement.tagName === "string") {
           intendedParentElement.appendChild(this);
         }
         return this;
@@ -410,17 +468,30 @@ function Elementool() {
 
       newElement.setContent = function (content) {
         if (typeof content === "function") {
+          if(self.elementsWithDynamicValues.indexOf(newElement) < 0) self.elementsWithDynamicValues.push(newElement);
           this._dynamicContent = content;
-          this.textContent = content();
+          if (this.hasOwnProperty && this.hasOwnProperty("textContent")) {
+            this.textContent = content();
+          } else {
+            this.innerText = content();
+          }
         } else {
-          this.textContent = content;
+          if (this.hasOwnProperty && this.hasOwnProperty("textContent")) {
+            this.textContent = content;
+          } else {
+            this.innerText = content;
+          }
         }
         return this;
       };
 
       newElement.render = function () {
         if (typeof this._dynamicContent === "function") {
-          this.textContent = this._dynamicContent();
+          if (this.hasOwnProperty && this.hasOwnProperty("textContent")) {
+            this.textContent = this._dynamicContent();
+          } else {
+            this.innerText = this._dynamicContent();
+          }
         }
         if (this._dynamicStyles) {
           self.util.applyStylesToElement(this, this._dynamicStyles);
@@ -429,14 +500,15 @@ function Elementool() {
           self.util.setAttributesOnElement(this, this._dynamicAttributes);
         }
         return this;
+        // TODO: Add ability to fire render against child elements
       }
 
       // Return the new element.
       return newElement;
-    },
+    }
 
 
-  }
+  };
 
   this.svgHelpers = {
 
@@ -565,7 +637,7 @@ function Elementool() {
         this.setAttribute("d", currentValue + " M" + x + "," + y);
         return this;
       },
-      moveToRelative: function(x,y){
+      moveToRelative: function (x, y) {
         var currentValue = this.getAttribute("d") || "";
         this.setAttribute("d", currentValue + " m" + x + "," + y);
         return this;
@@ -575,7 +647,7 @@ function Elementool() {
         this.setAttribute("d", currentValue + " L" + x + "," + y);
         return this;
       },
-      lineToRelative: function(x,y){
+      lineToRelative: function (x, y) {
         var currentValue = this.getAttribute("d") || "";
         this.setAttribute("d", currentValue + " l" + x + "," + y);
         return this;
@@ -585,7 +657,7 @@ function Elementool() {
         this.setAttribute("d", currentValue + " H" + x);
         return this;
       },
-      horizontalLineToRelative: function(x){
+      horizontalLineToRelative: function (x) {
         var currentValue = this.getAttribute("d") || "";
         this.setAttribute("d", currentValue + " h" + x);
         return this;
@@ -595,17 +667,17 @@ function Elementool() {
         this.setAttribute("d", currentValue + " V" + y);
         return this;
       },
-      verticalLineToRelative: function(y){
+      verticalLineToRelative: function (y) {
         var currentValue = this.getAttribute("d") || "";
         this.setAttribute("d", currentValue + " v" + y);
         return this;
       },
       arcTo: function (rx, ry, xAxisRotation, largeArcFlag, sweepFlag, x, y) {
-        if(typeof xAxisRotation === "boolean"){
+        if (typeof xAxisRotation === "boolean") {
           sweepFlag = xAxisRotation;
           xAxisRotation = 0;
         }
-        if(typeof largeArcFlag === "boolean"){
+        if (typeof largeArcFlag === "boolean") {
           sweepFlag = largeArcFlag;
           largeArcFlag = 0;
         }
@@ -613,12 +685,12 @@ function Elementool() {
         this.setAttribute("d", currentValue + " A" + rx + "," + ry + " " + xAxisRotation + " " + largeArcFlag + "," + sweepFlag + " " + x + "," + y);
         return this;
       },
-      arcToRelative: function(rx, ry, xAxisRotation, largeArcFlag, sweepFlag, x, y){
-        if(typeof xAxisRotation === "boolean"){
+      arcToRelative: function (rx, ry, xAxisRotation, largeArcFlag, sweepFlag, x, y) {
+        if (typeof xAxisRotation === "boolean") {
           sweepFlag = xAxisRotation;
           xAxisRotation = 0;
         }
-        if(typeof largeArcFlag === "boolean"){
+        if (typeof largeArcFlag === "boolean") {
           sweepFlag = largeArcFlag;
           largeArcFlag = 0;
         }
@@ -633,28 +705,28 @@ function Elementool() {
       },
       quadraticBezierCurveTo: function (x1, y1, x, y) {
         var smooth = false;
-        if(!x && !y){
+        if (!x && !y) {
           x = x1;
           y = y1;
           smooth = true;
         }
         var currentValue = this.getAttribute("d") || "";
-        if(smooth){
+        if (smooth) {
           this.setAttribute("d", currentValue + " T" + x + "," + y);
         } else {
           this.setAttribute("d", currentValue + " Q" + x1 + "," + y1 + " " + x + "," + y);
         }
         return this;
       },
-      quadraticBezierCurveToRelative: function(x1, y1, x, y){
+      quadraticBezierCurveToRelative: function (x1, y1, x, y) {
         var smooth = false;
-        if(!x && !y){
+        if (!x && !y) {
           x = x1;
           y = y1;
           smooth = true;
         }
         var currentValue = this.getAttribute("d") || "";
-        if(smooth){
+        if (smooth) {
           this.setAttribute("d", currentValue + " t" + x + "," + y);
         } else {
           this.setAttribute("d", currentValue + " q" + x1 + "," + y1 + " " + x + "," + y);
@@ -663,36 +735,36 @@ function Elementool() {
       },
       cubicBezierCurveTo: function (x1, y1, x2, y2, x, y) {
         var smooth = false;
-        if(!x && !y){
+        if (!x && !y) {
           x = x2;
           y = y2;
           smooth = true;
         }
         var currentValue = this.getAttribute("d") || "";
-        if(smooth){
+        if (smooth) {
           this.setAttribute("d", currentValue + " S" + x + "," + y);
         } else {
           this.setAttribute("d", currentValue + " C" + x1 + "," + y1 + " " + x2 + "," + y2 + " " + x + "," + y);
         }
         return this;
       },
-      cubicBezierCurveToRelative: function(x1, y1, x2, y2, x, y){
+      cubicBezierCurveToRelative: function (x1, y1, x2, y2, x, y) {
         var smooth = false;
-        if(!x && !y){
+        if (!x && !y) {
           x = x2;
           y = y2;
           smooth = true;
         }
         var currentValue = this.getAttribute("d") || "";
-        if(smooth){
+        if (smooth) {
           this.setAttribute("d", currentValue + " s" + x + "," + y);
         } else {
           this.setAttribute("d", currentValue + " c" + x1 + "," + y1 + " " + x2 + "," + y2 + " " + x + "," + y);
         }
         return this;
-      },
-      
-        
+      }
+
+
     },
 
     path: function (d, styles) {
@@ -703,8 +775,8 @@ function Elementool() {
       }).join("");
 
       var returnedPath = self.draw("path" + attributeString, undefined, styles);
-      for(var k in this.pathInstructions){
-        if(this.pathInstructions.hasOwnProperty(k)){
+      for (var k in this.pathInstructions) {
+        if (this.pathInstructions.hasOwnProperty ? this.pathInstructions.hasOwnProperty(k) : this.pathInstructions[k]) {
           returnedPath[k] = this.pathInstructions[k];
         }
       }
@@ -712,13 +784,13 @@ function Elementool() {
       return returnedPath;
     },
 
-    clipPath: function(id, content){
+    clipPath: function (id, content) {
       var clipPath = self.draw("clipPath", content);
       clipPath.id = id;
       return clipPath;
     },
 
-    mask: function(id, content){
+    mask: function (id, content) {
       var mask = self.draw("mask", content);
       mask.id = id;
       return mask;
@@ -741,43 +813,43 @@ function Elementool() {
       var gradient = self.draw("linearGradient", stops);
       gradient.id = id;
       var x1;
-      if(typeof x1OrDirection === "string"){
-        if(x1OrDirection === "LR"){
+      if (typeof x1OrDirection === "string") {
+        if (x1OrDirection === "LR") {
           x1 = 0;
           y1 = 0;
           x2 = 1;
           y2 = 0;
-        } else if(x1OrDirection === "RL"){
+        } else if (x1OrDirection === "RL") {
           x1 = 1;
           y1 = 0;
           x2 = 0;
           y2 = 0;
-        } else if(x1OrDirection === "TB"){
+        } else if (x1OrDirection === "TB") {
           x1 = 0;
           y1 = 0;
           x2 = 0;
           y2 = 1;
-        } else if(x1OrDirection === "BT"){
+        } else if (x1OrDirection === "BT") {
           x1 = 0;
           y1 = 1;
           x2 = 0;
           y2 = 0;
-        } else if(x1OrDirection === "TLBR"){
+        } else if (x1OrDirection === "TLBR") {
           x1 = 0;
           y1 = 0;
           x2 = 1;
           y2 = 1;
-        } else if(x1OrDirection === "BLTR"){
+        } else if (x1OrDirection === "BLTR") {
           x1 = 0;
           y1 = 1;
           x2 = 1;
           y2 = 0;
-        } else if(x1OrDirection === "TRBL"){
+        } else if (x1OrDirection === "TRBL") {
           x1 = 1;
           y1 = 0;
           x2 = 0;
           y2 = 1;
-        } else if(x1OrDirection === "BRTL"){
+        } else if (x1OrDirection === "BRTL") {
           x1 = 1;
           y1 = 1;
           x2 = 0;
@@ -800,11 +872,16 @@ function Elementool() {
 
     stop: function (offset, color, opacity) {
       var stop = self.draw("stop");
-      stop.setAttribute("offset", offset);
-      stop.setAttribute("stop-color", color);
+      var attributes = {
+        "offset": offset,
+        "stop-color": color
+      };
       if (opacity) {
-        stop.setAttribute("stop-opacity", opacity);
+        attributes["stop-opacity"] = opacity;
       }
+      self.setAttributes(stop, attributes);
+      
+      
       return stop;
     },
 
@@ -823,7 +900,7 @@ function Elementool() {
       return gradient;
     },
 
-    
+
     animate: function (svgElement, attributeToAnimate, fromValue, toValue, duration, repeatCount, fillMode) {
 
       // if fromValue is not provided, get the current value of the attribute
@@ -865,6 +942,11 @@ function Elementool() {
 
       var animateElement = self.draw("animate" + animateString);
       svgElement.appendChild(animateElement);
+
+      if(animateElement.beginElement) animateElement.beginElement();
+
+      return animateElement;
+
     },
 
     animateTransform: function (svgElement, type, fromValue, toValue, duration, repeatCount, fillMode) {
@@ -943,7 +1025,7 @@ function Elementool() {
     },
 
     moveElementBehind: function (elementToMove, elementToMoveBehind) {
-      if(!elementToMoveBehind && typeof this === "object" && this instanceof SVGElement){
+      if (!elementToMoveBehind && typeof this === "object" && this instanceof SVGElement) {
         elementToMoveBehind = elementToMove;
         elementToMove = this;
       }
@@ -953,8 +1035,8 @@ function Elementool() {
     },
 
     addMaskToElement: function (element, maskElement) {
-      if (maskElement instanceof Element){
-        if(maskElement.id) {
+      if (maskElement instanceof Element) {
+        if (maskElement.id) {
           element.setAttribute("mask", "url(#" + maskElement.id + ")");
         } else {
           var maskId = "mask" + Math.random().toString().slice(2);
@@ -962,7 +1044,7 @@ function Elementool() {
           element.setAttribute("mask", "url(#" + maskId + ")");
         }
         // if the mask element isn't in the DOM we'll need to add it
-        if(!maskElement.parentNode){
+        if (!maskElement.parentNode) {
           element.parentNode.insertBefore(maskElement, element);
         }
       }
@@ -970,8 +1052,8 @@ function Elementool() {
 
 
     addClipPathToElement: function (element, clipPathElement) {
-      if (clipPathElement instanceof Element){
-        if(clipPathElement.id) {
+      if (clipPathElement instanceof Element) {
+        if (clipPathElement.id) {
           element.setAttribute("clip-path", "url(#" + clipPathElement.id + ")");
         } else {
           var clipPathId = "clipPath" + Math.random().toString().slice(2);
@@ -979,7 +1061,7 @@ function Elementool() {
           element.setAttribute("clip-path", "url(#" + clipPathId + ")");
         }
         // if the clip path element isn't in the DOM we'll need to add it
-        if(!clipPathElement.parentNode){
+        if (!clipPathElement.parentNode) {
           element.parentNode.insertBefore(clipPathElement, element);
         }
       }
@@ -1000,19 +1082,26 @@ function Elementool() {
   };
 
   this.accessibilityHelpers = {
-    description: function(element, description){
-      element.setAttribute("aria-label", description);
-      element.setAttribute("title", description);
+    description: function (element, description) {
+      if(element.setAttributes){
+        element.setAttributes({
+          "title": description,
+          "aria-label": description
+        }) 
+      } else {
+        element.setAttribute("aria-label", description);
+        element.setAttribute("title", description);
+      }
       return element;
     },
-    button: function(element, customDescription){
+    button: function (element, customDescription) {
       element.setAttribute("role", "button");
-      if(customDescription) this.description(element, customDescription);
+      if (customDescription) this.description(element, customDescription);
       return element;
     },
-    link: function(element, customDescription){
+    link: function (element, customDescription) {
       element.setAttribute("role", "link");
-      if(customDescription) this.description(element, customDescription);
+      if (customDescription) this.description(element, customDescription);
       return element;
     }
   }
